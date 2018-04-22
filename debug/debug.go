@@ -1,45 +1,55 @@
 package debug
 
 import (
+	"fmt"
 	"log"
 	"os"
-	"fmt"
 	"regexp"
+	"strings"
 )
 
-var separatorRegex = regexp.MustCompile("[,;:\\s]")
 var enabledPrefixRegexes []*regexp.Regexp
 
 func init() {
 	logger := log.New(os.Stderr, "github.com/invokit/vorspiel-lib/debug", log.LstdFlags)
 
-
 	enabledPrefixesString := os.Getenv("DEBUG")
-	enabledPrefixes := separatorRegex.Split(enabledPrefixesString, -1)
 
-	for _, prefix := range enabledPrefixes {
+	var err error
+	enabledPrefixRegexes, err = parseEnabledPrefixString(enabledPrefixesString)
+	if err != nil {
+		logger.Printf("Invalid value in DEBUG env-var: '%s'. Error message: %s", enabledPrefixesString, err)
+	}
+}
+
+func parseEnabledPrefixString(enabledPrefixesString string) ([]*regexp.Regexp, error) {
+	enabledPrefixes := strings.Split(enabledPrefixesString, " ")
+
+	r := make([]*regexp.Regexp, len(enabledPrefixes))
+
+	for i, prefix := range enabledPrefixes {
 		regex, err := regexp.Compile(fmt.Sprintf("^\\Q%s\\E(|$)", prefix))
 		if err != nil {
-			logger.Printf("Invalid value in DEBUG env-var: '%s'. Error message: %s", prefix, err)
-			continue
+			return nil, err
 		}
 
-		enabledPrefixRegexes = append(enabledPrefixRegexes, regex)
+		r[i] = regex
 	}
+
+	return r, nil
 }
 
 func NewLogger(packageName string) Logger {
 	for _, prefixRegex := range enabledPrefixRegexes {
 		if prefixRegex.MatchString(packageName) {
-			logger := log.New(os.Stderr, fmt.Sprintf("DEBUG: %s", packageName), log.Llongfile | log.LstdFlags | log.Lmicroseconds)
+			logger := log.New(os.Stderr, "DEBUG ", log.Llongfile|log.LstdFlags|log.Lmicroseconds)
 
-			return &loggerImpl{logger:logger}
+			return &loggerImpl{logger: logger}
 		}
 	}
 
 	return &noopLoggerInstance
 }
-
 
 type Logger interface {
 	Print(v ...interface{})
@@ -47,8 +57,7 @@ type Logger interface {
 	Println(v ...interface{})
 }
 
-
-type noopLogger struct {}
+type noopLogger struct{}
 
 func (logger *noopLogger) Println(v ...interface{}) {}
 
@@ -58,9 +67,8 @@ func (logger *noopLogger) Printf(fmt string, values ...interface{}) {}
 
 var noopLoggerInstance = noopLogger{}
 
-
 type loggerImpl struct {
-	logger* log.Logger
+	logger *log.Logger
 }
 
 func (l *loggerImpl) Print(v ...interface{}) {
